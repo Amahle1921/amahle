@@ -1,39 +1,61 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Sparkles, Mail, FileText, ListTodo, BookOpen, Loader2 } from "lucide-react";
+import { Sparkles, Mail, FileText, ListTodo, BookOpen, Loader2, ArrowLeft, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type TaskId = "email" | "summarize" | "plan" | "research";
 
-const QUICK_PROMPTS = [
-  { icon: Mail, label: "Write Email", prompt: "Write a professional email to my manager requesting time off next Friday for a personal appointment." },
-  { icon: FileText, label: "Summarize Notes", prompt: "Summarize these meeting notes:\n\n" },
-  { icon: ListTodo, label: "Plan My Day", prompt: "Help me plan and prioritize my tasks for tomorrow. My tasks are: " },
-  { icon: BookOpen, label: "Research Assistant", prompt: "Act as my research assistant. Conduct in-depth research on the following topic and return: an executive summary, key insights, important facts & figures, notable perspectives or debates, practical implications, and suggested next steps for deeper learning. Topic: " },
+const TASKS: { id: TaskId; icon: typeof Mail; label: string; description: string }[] = [
+  { id: "email", icon: Mail, label: "Write Email", description: "Draft a polished, professional email." },
+  { id: "summarize", icon: FileText, label: "Summarize Notes", description: "Turn meeting notes into key points & actions." },
+  { id: "plan", icon: ListTodo, label: "Plan My Day", description: "Prioritize tasks into a clear action plan." },
+  { id: "research", icon: BookOpen, label: "Research Assistant", description: "Get an in-depth briefing on any topic." },
 ];
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 export default function Index() {
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
+  const [task, setTask] = useState<TaskId | null>(null);
+  const [result, setResult] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  // Shared form fields
+  const [tone, setTone] = useState("Formal");
+  const [recipient, setRecipient] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [notes, setNotes] = useState("");
+  const [tasks, setTasks] = useState("");
+  const [topic, setTopic] = useState("");
 
-  const send = async (text?: string) => {
-    const content = (text ?? input).trim();
-    if (!content || isLoading) return;
-    const userMsg: Msg = { role: "user", content };
-    const next = [...messages, userMsg];
-    setMessages(next);
-    setInput("");
+  const buildPrompt = (): string | null => {
+    switch (task) {
+      case "email":
+        if (!purpose.trim()) return null;
+        return `Write a professional email.\n- Recipient: ${recipient || "Unspecified"}\n- Tone: ${tone}\n- Purpose: ${purpose}\n\nInclude a subject line and a concise body.`;
+      case "summarize":
+        if (!notes.trim()) return null;
+        return `Summarize the following meeting notes. Extract key points, decisions, action items (with owners), and deadlines.\n\nNOTES:\n${notes}`;
+      case "plan":
+        if (!tasks.trim()) return null;
+        return `Help me plan and prioritize my day. Organize the tasks below by priority (High/Medium/Low) and urgency, then propose a structured schedule with productivity tips.\n\nTASKS:\n${tasks}`;
+      case "research":
+        if (!topic.trim()) return null;
+        return `Act as my research assistant. Conduct in-depth research on this topic and return: executive summary, key insights, important facts & figures, notable perspectives, practical implications, and suggested next steps.\n\nTOPIC: ${topic}`;
+      default:
+        return null;
+    }
+  };
+
+  const run = async () => {
+    const prompt = buildPrompt();
+    if (!prompt) { toast.error("Please fill in the required fields."); return; }
     setIsLoading(true);
+    setResult("");
 
     try {
       const resp = await fetch(CHAT_URL, {
@@ -42,19 +64,18 @@ export default function Index() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
       });
 
-      if (resp.status === 429) { toast.error("Rate limit reached. Please try again shortly."); setIsLoading(false); return; }
-      if (resp.status === 402) { toast.error("AI credits exhausted. Add credits in workspace settings."); setIsLoading(false); return; }
-      if (!resp.ok || !resp.body) { toast.error("Failed to get response"); setIsLoading(false); return; }
+      if (resp.status === 429) { toast.error("Rate limit reached. Try again shortly."); return; }
+      if (resp.status === 402) { toast.error("AI credits exhausted. Add credits in workspace settings."); return; }
+      if (!resp.ok || !resp.body) { toast.error("Failed to get response"); return; }
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
       let acc = "";
       let done = false;
-      let started = false;
 
       while (!done) {
         const { done: d, value } = await reader.read();
@@ -71,15 +92,7 @@ export default function Index() {
           try {
             const parsed = JSON.parse(json);
             const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              acc += delta;
-              if (!started) {
-                started = true;
-                setMessages(p => [...p, { role: "assistant", content: acc }]);
-              } else {
-                setMessages(p => p.map((m, i) => i === p.length - 1 ? { ...m, content: acc } : m));
-              }
-            }
+            if (delta) { acc += delta; setResult(acc); }
           } catch { buf = line + "\n" + buf; break; }
         }
       }
@@ -91,117 +104,156 @@ export default function Index() {
     }
   };
 
+  const reset = () => {
+    setTask(null);
+    setResult("");
+    setRecipient(""); setPurpose(""); setNotes(""); setTasks(""); setTopic(""); setTone("Formal");
+  };
+
+  const activeTask = TASKS.find(t => t.id === task);
+
   return (
     <div className="min-h-screen flex flex-col bg-background relative overflow-hidden">
       <div className="absolute inset-0 gradient-glow pointer-events-none" />
 
-      {/* Header */}
       <header className="relative border-b border-border/60 backdrop-blur-sm bg-background/70 z-10">
-        <div className="container max-w-4xl flex items-center justify-between py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-elegant">
-              <Sparkles className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">Workhorse AI</h1>
-              <p className="text-xs text-muted-foreground">Your workplace productivity assistant</p>
-            </div>
+        <div className="container max-w-5xl flex items-center gap-3 py-4">
+          <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-elegant">
+            <Sparkles className="w-5 h-5 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Workhorse AI</h1>
+            <p className="text-xs text-muted-foreground">Your workplace productivity assistant</p>
           </div>
         </div>
       </header>
 
-      {/* Chat area */}
-      <main ref={scrollRef} className="flex-1 overflow-y-auto relative z-10">
-        <div className="container max-w-4xl py-8 space-y-6">
-          {messages.length === 0 && (
-            <div className="text-center py-12 space-y-6 animate-in fade-in duration-700">
-              <div className="space-y-3">
+      <main className="flex-1 relative z-10">
+        <div className="container max-w-5xl py-10">
+          {!task && (
+            <div className="space-y-8 animate-in fade-in duration-500">
+              <div className="text-center space-y-3">
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight">
                   Work smarter with <span className="text-gradient">Workhorse</span>
                 </h2>
-                <p className="text-muted-foreground max-w-xl mx-auto text-base">
-                  Draft emails, summarize meetings, plan your day, and demystify complex topics — all in one place.
+                <p className="text-muted-foreground max-w-xl mx-auto">
+                  Pick a task and let Workhorse handle the heavy lifting.
                 </p>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 max-w-3xl mx-auto pt-4">
-                {QUICK_PROMPTS.map(({ icon: Icon, label, prompt }) => (
+              <div className="grid sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
+                {TASKS.map(({ id, icon: Icon, label, description }) => (
                   <button
-                    key={label}
-                    onClick={() => setInput(prompt)}
-                    className="group p-4 rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-elegant transition-smooth text-left"
+                    key={id}
+                    onClick={() => setTask(id)}
+                    className="group p-6 rounded-2xl border border-border bg-card hover:border-primary/40 hover:shadow-elegant transition-smooth text-left"
                   >
-                    <Icon className="w-5 h-5 text-primary mb-2 group-hover:scale-110 transition-smooth" />
-                    <div className="text-sm font-medium">{label}</div>
+                    <div className="w-11 h-11 rounded-xl gradient-primary flex items-center justify-center mb-4 shadow-soft">
+                      <Icon className="w-5 h-5 text-primary-foreground" />
+                    </div>
+                    <h3 className="font-semibold text-base mb-1">{label}</h3>
+                    <p className="text-sm text-muted-foreground">{description}</p>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {messages.map((m, i) => (
-            <div key={i} className={`flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              {m.role === "assistant" && (
-                <div className="w-8 h-8 shrink-0 rounded-lg gradient-primary flex items-center justify-center mt-1">
-                  <Sparkles className="w-4 h-4 text-primary-foreground" />
+          {task && activeTask && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={reset}>
+                  <ArrowLeft className="w-4 h-4 mr-1" /> Back
+                </Button>
+                <div className="flex items-center gap-2">
+                  <activeTask.icon className="w-5 h-5 text-primary" />
+                  <h2 className="text-xl font-semibold">{activeTask.label}</h2>
                 </div>
-              )}
-              <div className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-soft ${
-                m.role === "user"
-                  ? "gradient-primary text-primary-foreground rounded-tr-sm"
-                  : "bg-card border border-border rounded-tl-sm"
-              }`}>
-                {m.role === "assistant" ? (
-                  <div className="prose-chat text-sm">
-                    <ReactMarkdown>{m.content}</ReactMarkdown>
-                  </div>
-                ) : (
-                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
-                )}
               </div>
-            </div>
-          ))}
 
-          {isLoading && messages[messages.length - 1]?.role === "user" && (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 shrink-0 rounded-lg gradient-primary flex items-center justify-center mt-1">
-                <Loader2 className="w-4 h-4 text-primary-foreground animate-spin" />
-              </div>
-              <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-muted-foreground">
-                Thinking…
+              <div className="grid lg:grid-cols-2 gap-6">
+                {/* Form */}
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-soft space-y-4">
+                  {task === "email" && (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Recipient</Label>
+                        <Input value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="e.g. My manager, the client" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Tone</Label>
+                        <Select value={tone} onValueChange={setTone}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Formal">Formal</SelectItem>
+                            <SelectItem value="Informal">Informal</SelectItem>
+                            <SelectItem value="Persuasive">Persuasive</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Purpose / Key points *</Label>
+                        <Textarea rows={6} value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="What should the email say?" />
+                      </div>
+                    </>
+                  )}
+
+                  {task === "summarize" && (
+                    <div className="space-y-2">
+                      <Label>Meeting notes *</Label>
+                      <Textarea rows={14} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Paste your meeting notes or document here…" />
+                    </div>
+                  )}
+
+                  {task === "plan" && (
+                    <div className="space-y-2">
+                      <Label>Your tasks *</Label>
+                      <Textarea rows={14} value={tasks} onChange={e => setTasks(e.target.value)} placeholder="List your tasks, one per line…" />
+                    </div>
+                  )}
+
+                  {task === "research" && (
+                    <div className="space-y-2">
+                      <Label>Topic *</Label>
+                      <Textarea rows={6} value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. The impact of AI on knowledge work" />
+                    </div>
+                  )}
+
+                  <Button onClick={run} disabled={isLoading} className="w-full h-11 gradient-primary shadow-elegant">
+                    {isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating…</> : <><Wand2 className="w-4 h-4 mr-2" /> Generate</>}
+                  </Button>
+                </div>
+
+                {/* Result */}
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-soft min-h-[300px]">
+                  {!result && !isLoading && (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground py-12">
+                      <Sparkles className="w-8 h-8 mb-3 text-primary/60" />
+                      <p className="text-sm">Your result will appear here.</p>
+                    </div>
+                  )}
+                  {isLoading && !result && (
+                    <div className="h-full flex flex-col items-center justify-center text-muted-foreground py-12">
+                      <Loader2 className="w-6 h-6 animate-spin mb-2" />
+                      <p className="text-sm">Working on it…</p>
+                    </div>
+                  )}
+                  {result && (
+                    <div className="prose-chat text-sm">
+                      <ReactMarkdown>{result}</ReactMarkdown>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
         </div>
       </main>
 
-      {/* Input */}
-      <div className="relative z-10 border-t border-border/60 bg-background/80 backdrop-blur-sm">
-        <div className="container max-w-4xl py-4">
-          <div className="flex gap-2 items-end">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-              }}
-              placeholder="Ask Workhorse to write, summarize, plan, or explain…"
-              className="min-h-[56px] max-h-40 resize-none rounded-xl border-border bg-card shadow-soft focus-visible:ring-primary"
-              disabled={isLoading}
-            />
-            <Button
-              onClick={() => send()}
-              disabled={isLoading || !input.trim()}
-              size="lg"
-              className="h-[56px] px-5 gradient-primary hover:opacity-90 shadow-elegant transition-smooth"
-            >
-              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground text-center mt-2">
-            Workhorse can make mistakes. Verify important information before acting.
-          </p>
+      <footer className="relative z-10 border-t border-border/60 bg-background/80 backdrop-blur-sm">
+        <div className="container max-w-5xl py-3 text-xs text-muted-foreground text-center">
+          Workhorse can make mistakes. Verify important information before acting.
         </div>
-      </div>
+      </footer>
     </div>
   );
 }
