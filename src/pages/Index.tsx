@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Sparkles, Mail, FileText, ListTodo, Search, Loader2 } from "lucide-react";
+import { Send, Sparkles, Mail, FileText, ListTodo, Search, BookOpen, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ const QUICK_PROMPTS = [
   { icon: FileText, label: "Summarize Notes", prompt: "Summarize these meeting notes:\n\n" },
   { icon: ListTodo, label: "Plan My Day", prompt: "Help me plan and prioritize my tasks for tomorrow. My tasks are: " },
   { icon: Search, label: "Explain Topic", prompt: "Explain in simple terms: " },
+  { icon: BookOpen, label: "Research Assistant", prompt: "Act as my research assistant. Conduct in-depth research on the following topic and return: an executive summary, key insights, important facts & figures, notable perspectives or debates, practical implications, and suggested next steps for deeper learning. Topic: " },
 ];
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
@@ -123,7 +124,7 @@ export default function Index() {
                   Draft emails, summarize meetings, plan your day, and demystify complex topics — all in one place.
                 </p>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl mx-auto pt-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 max-w-3xl mx-auto pt-4">
                 {QUICK_PROMPTS.map(({ icon: Icon, label, prompt }) => (
                   <button
                     key={label}
