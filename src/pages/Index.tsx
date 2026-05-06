@@ -124,7 +124,7 @@ export default function Index() {
                   Draft emails, summarize meetings, plan your day, and demystify complex topics — all in one place.
                 </p>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl mx-auto pt-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 max-w-3xl mx-auto pt-4">
                 {QUICK_PROMPTS.map(({ icon: Icon, label, prompt }) => (
                   <button
                     key={label}
