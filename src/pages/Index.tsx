@@ -13,11 +13,11 @@ type TaskId = "chat" | "email" | "summarize" | "plan" | "research";
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 const TASKS: { id: TaskId; icon: typeof Mail; label: string; description: string }[] = [
-  { id: "chat", icon: MessageSquare, label: "AI Chatbot", description: "Have a free-form conversation with Workhorse." },
   { id: "email", icon: Mail, label: "Write Email", description: "Draft a polished, professional email." },
   { id: "summarize", icon: FileText, label: "Summarize Notes", description: "Turn meeting notes into key points & actions." },
   { id: "plan", icon: ListTodo, label: "Plan My Day", description: "Prioritize tasks into a clear action plan." },
   { id: "research", icon: BookOpen, label: "Research Assistant", description: "Get an in-depth briefing on any topic." },
+  { id: "chat", icon: MessageSquare, label: "AI Chatbot", description: "Have a free-form conversation with Workhorse." },
 ];
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
